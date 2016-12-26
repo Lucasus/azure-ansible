@@ -1,12 +1,6 @@
 ﻿#!/bin/bash
 
 #########################################################
-# Script Name: configure-ansible.sh
-# Author: Gonzalo Ruiz
-# Version: 0.1
-# Date Created:           01st Marh 2015
-# Last Modified:          31st December 17:26 GMT
-# Last Modified By:       Gonzalo Ruiz
 # Description:
 #  This script automates the installation of this VM as an ansible VM. Specifically it:
 #     installs ansible on all the nodes
@@ -14,37 +8,29 @@
 # Parameters :
 #  1 - i: IP Pattern
 #  2 - n: Number of nodes
-#  3 - r: Configure RAID
-#  4 - f: filesystem : ext4 or xfs
 # Note :
-# This script has only been tested on CentOS 6.5 and Ubuntu 12.04 LTS
+# This script has only been tested on Ubuntu 14.04 LTS
 #########################################################
 
 #---BEGIN VARIABLES---
 IP_ADDRESS_SPACE=''
 NUMBER_OF_NODES=''
 NODE_LIST_IPS=()
-CONFIGURE_RAID=''
-FILE_SYSTEM=''
 USER_NAME=''
 USER_PASSWORD=''
 TEMPLATE_ROLE='ansible'
 START_IP_INDEX=0
 SSH_AZ_ACCOUNT_NAME=''
 SSH_AZ_ACCOUNT_KEY=''
-MOUNTPOINT='/datadrive'
 
- function usage()
- {
+function usage()
+{
     echo "INFO:"
-    echo "Usage: configure-ansible.sh [-i IP_ADDRESS_SPACE ] [-n NUMBER_OF_NODES ] [-r CONFIGURE_RAID ] [-f FILE_SYSTEM] "
+    echo "Usage: configure-ansible.sh [-i IP_ADDRESS_SPACE ] [-n NUMBER_OF_NODES ]"
     echo "The -i (ipAddressSpace) parameters specifies the starting IP space for the vms.For instance if you specify 10.0.2.2, and 3 nodes, the script will find for the VMS 10.0.2.20, 10.0.2.21,10.0.2.22.Plase note that Azure reserves the first 4 IPs, so you will have to specify an IP space in which IP x.x.x0 is available"
     echo "The -n (numberOfNodes) parameter specifies the number of VMs"
-    echo "The -r (configureRAID) parameter specifies whether you want to create a RAID with all the available data disks.Allowed values : true or false"
-    echo "The -f (fileSystem) parameter specifies the file system you want to use.Allowed values : ext4 or xfs"
     echo "The -a (azureStorageAccountName) parameter specifies the name of the storage account that contains the private keys"
     echo "The -k (azureStorageAccountKey) parameter specifies the key of the private storage account that contains the private keys"
-
 }
 
 function log()
@@ -77,22 +63,6 @@ while getopts :i:n:r:f:a:k: optname; do
         IDX=$((${IDX} + 1))
       done
       ;;
-    r) # Configure RAID
-      CONFIGURE_RAID=${OPTARG}
-      if [[ "${CONFIGURE_RAID}" != "true" &&  "${CONFIGURE_RAID}" != "false" ]] ; then
-          log "ERROR:Configure RAID (-r) value ${CONFIGURE_RAID} not allowed"
-          usage
-          exit 1
-      fi
-      ;;
-    f) # File system  : ext4 or xfs
-      FILE_SYSTEM=${OPTARG}
-      if [[ "${FILE_SYSTEM}" != "ext4" &&  "${FILE_SYSTEM}" != "xfs" ]] ; then
-          log "ERROR:File system (-f) ${FILE_SYSTEM} not allowed"
-          usage
-          exit 1
-      fi
-      ;;
     a) # Azure Private Storage Account Name- SSH Keys
       SSH_AZ_ACCOUNT_NAME=${OPTARG}
       ;;
@@ -119,29 +89,25 @@ function install_ansible_ubuntu()
     sudo apt-get --yes --force-yes install git
     # install python
     sudo apt-get --yes --force-yes install python-pip
+}
 
- }
 
-
- function get_sshkeys()
- {
+function get_sshkeys()
+{
     log "INFO:Retrieving ssh keys from Azure Storage"
 	sudo apt-get --yes --force-yes install build-essential libssl-dev libffi-dev python-dev
 
 	sudo pip install cryptography
-
     sudo pip install azure-storage
 
     # Download both Private and Public Key
     python GetSSHFromPrivateStorageAccount.py ${SSH_AZ_ACCOUNT_NAME} ${SSH_AZ_ACCOUNT_KEY} id_rsa
     python GetSSHFromPrivateStorageAccount.py ${SSH_AZ_ACCOUNT_NAME} ${SSH_AZ_ACCOUNT_KEY} id_rsa.pub
-
 }
 
 
 function configure_ssh()
 {
-
     # copy ssh private key
     mkdir -p ~/.ssh
     mv id_rsa ~/.ssh
@@ -149,7 +115,6 @@ function configure_ssh()
     # set permissions
     chmod 700 ~/.ssh
     chmod 600 ~/.ssh/id_rsa
-
 
     # copy root ssh key
     cat id_rsa.pub  >> ~/.ssh/authorized_keys
@@ -163,14 +128,14 @@ function configure_ssh()
 }
 
 
- function configure_ansible()
- {
+function configure_ansible()
+{
     # Copy ansible hosts file
     ANSIBLE_HOST_FILE=/etc/ansible/hosts
     ANSIBLE_CONFIG_FILE=/etc/ansible/ansible.cfg
 
-    mv ${ANSIBLE_HOST_FILE} ${ANSIBLE_HOST_FILE}.backup
-    mv ${ANSIBLE_CONFIG_FILE} ${ANSIBLE_CONFIG_FILE}.backup
+    cp ${ANSIBLE_HOST_FILE} ${ANSIBLE_HOST_FILE}.backup
+    cp ${ANSIBLE_CONFIG_FILE} ${ANSIBLE_CONFIG_FILE}.backup
 
     # Accept ssh keys by default
     printf  "[defaults]\nhost_key_checking = False\n\n" >> "${ANSIBLE_CONFIG_FILE}"
@@ -183,26 +148,18 @@ function configure_ssh()
 
     # Validate ansible configuration
     ansible ${TEMPLATE_ROLE} -m ping -v
-
-
- }
-
-
- function configure_storage()
- {
-    log "INFO: Configuring Storage "
-    log "WARNING: This process is not incremental, don't use it if you don't want to lose your existing storage configuration"
-
-    # Run ansible template to configure Storage : Create RAID and Configure Filesystem
-    ansible-playbook InitStorage_RAID.yml  --extra-vars "target=${TEMPLATE_ROLE} file_system=${FILE_SYSTEM}"
-
- }
-
-InitializeVMs()
-{
-	install_ansible_ubuntu
-    get_sshkeys
-    configure_ssh
 }
 
-InitializeVMs
+function configure_storage()
+{
+	log "INFO: Configuring Storage "
+	log "WARNING: This process is not incremental, don't use it if you don't want to lose your existing storage configuration"
+
+	# Run ansible template to configure Storage : Create RAID and Configure Filesystem
+	ansible-playbook InitStorage_RAID.yml  --extra-vars "target=${TEMPLATE_ROLE} file_system=${FILE_SYSTEM}"
+}
+
+install_ansible_ubuntu
+get_sshkeys
+configure_ssh
+configure_ansible
