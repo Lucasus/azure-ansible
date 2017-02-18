@@ -74,7 +74,7 @@ function configure_ssh()
     # copy root ssh key
     mkdir -p ~/.ssh
     cat id_rsa.pub >> ~/.ssh/authorized_keys
-    rm id_rsa.pub
+    # rm id_rsa.pub
 
     # set permissions
     chmod 700 ~/.ssh
